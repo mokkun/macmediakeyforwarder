@@ -9,10 +9,12 @@ typedef NS_ENUM(NSInteger, MediaKeysPrioritize)
 {
     // Normal behavior (without priority; send events to iTunes and Spotify if both are open)
     MediaKeysPrioritizeNone,
-    // If both apps are open, prioritize iTunes over Spotify
+    // If all apps are open, prioritize iTunes
     MediaKeysPrioritizeITunes,
-    // If both apps are open, prioritize Spotify over iTunes
-    MediaKeysPrioritizeSpotify
+    // If all apps are open, prioritize Spotify
+    MediaKeysPrioritizeSpotify,
+    // If all apps are open, prioritize CMUS
+    MediaKeysPrioritizeCMUS
 };
 
 typedef NS_ENUM(NSInteger, PauseState)
@@ -54,6 +56,17 @@ MediaKeysPrioritize mediaKeysPriority;
 @end
 
 @implementation AppDelegate
+
+- (NSString *)cmusPath
+{
+    NSArray *searchPaths = @[@"/opt/local/bin/cmus-remote", @"/usr/local/bin/cmus-remote"];
+    for (NSString *path in searchPaths) {
+        if ([NSFileManager.defaultManager fileExistsAtPath:path]) {
+            return path;
+        }
+    }
+    return nil;
+}
 
 static CGEventRef tapEventCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *refcon)
 {
@@ -105,6 +118,7 @@ static CGEventRef tapEventCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         
         iTunesApplication *iTunes = [SBApplication applicationWithBundleIdentifier:[self iTunesBundleIdentifier]];
         SpotifyApplication *spotify = [SBApplication applicationWithBundleIdentifier:@"com.spotify.client"];
+        NSString *cmusPath = [self cmusPath];
         
         if ( pauseState == PauseStatePause )
         {
@@ -184,6 +198,32 @@ static CGEventRef tapEventCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                         {
                             [spotify previousTrack];
                             break;
+                        }
+                    }
+                    break;
+                }
+                case MediaKeysPrioritizeCMUS:
+                {
+                    if (cmusPath) {
+                        switch (keyCode)
+                        {
+                            case NX_KEYTYPE_PLAY:
+                            {
+                                system([[NSString stringWithFormat:@"%@ -u", cmusPath] UTF8String]);
+                                break;
+                            }
+                            case NX_KEYTYPE_NEXT:
+                            case NX_KEYTYPE_FAST:
+                            {
+                                system([[NSString stringWithFormat:@"%@ -n", cmusPath] UTF8String]);
+                                break;
+                            };
+                            case NX_KEYTYPE_PREVIOUS:
+                            case NX_KEYTYPE_REWIND:
+                            {
+                                system([[NSString stringWithFormat:@"%@ -r", cmusPath] UTF8String]);
+                                break;
+                            }
                         }
                     }
                     break;
@@ -328,6 +368,7 @@ static CGEventRef tapEventCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     [priorityOptionItems addObject:[ menu addItemWithTitle: NSLocalizedString(@"Send events to both players", @"Send events to both players") action : @selector(prioritizeNone) keyEquivalent : @"" ]];
     [priorityOptionItems addObject:[ menu addItemWithTitle: NSLocalizedString(@"Prioritize iTunes", @"Prioritize iTunes") action : @selector(prioritizeITunes) keyEquivalent : @"" ]];
     [priorityOptionItems addObject:[ menu addItemWithTitle: NSLocalizedString(@"Prioritize Spotify", @"Prioritize Spotify") action : @selector(prioritizeSpotify) keyEquivalent : @"" ]];
+    [priorityOptionItems addObject:[ menu addItemWithTitle: NSLocalizedString(@"Prioritize CMUS", @"Prioritize CMUS") action : @selector(prioritizeCMUS) keyEquivalent : @"" ]];
 
     [ menu addItem : [ NSMenuItem separatorItem ] ]; // A thin grey line
 
@@ -469,6 +510,13 @@ static CGEventRef tapEventCallback(CGEventTapProxy proxy, CGEventType type, CGEv
 - (void)prioritizeSpotify
 {
     mediaKeysPriority = MediaKeysPrioritizeSpotify;
+    [[NSUserDefaults standardUserDefaults] setObject:@(mediaKeysPriority) forKey:kUserDefaultsPriorityOptionKey];
+    [self updateOptionState];
+}
+
+- (void)prioritizeCMUS
+{
+    mediaKeysPriority = MediaKeysPrioritizeCMUS;
     [[NSUserDefaults standardUserDefaults] setObject:@(mediaKeysPriority) forKey:kUserDefaultsPriorityOptionKey];
     [self updateOptionState];
 }
